@@ -1,0 +1,23 @@
+
+
+# Train/val/test sets as 1) dir: path/to/imgs, 2) file: path/to/imgs.txt, or 3) list: [path/to/imgs1, path/to/imgs2, ..]
+path: /home/hyeonji/detectron2/label_checker_testworksXML/TW_strawberry_output/yolo/  # dataset root dir
+train: images/train/  # train images (relative to 'path')
+val: images/val/   # val images (relative to 'path')
+test: images/test/   # test images (optional)
+
+# Classes
+names:
+  0: Flower
+  1: Before_blooming
+  2: Receptacle
+  3: Green_small_fruit
+  4: Strawberry_1
+  5: Strawberry_2
+  6: Strawberry_3
+  
+
+
+# Download script/URL (optional)
+#download: |
+  
