@@ -1,20 +1,20 @@
 # Ultralytics YOLO 🚀, GPL-3.0 license
 
 from itertools import repeat
-from multiprocessing.pool import Pool
+from multiprocessing.pool import ThreadPool
 from pathlib import Path
 
 import torchvision
 from tqdm import tqdm
 
-from ..utils import NUM_THREADS, TQDM_BAR_FORMAT
+from ..utils import NUM_THREADS, TQDM_BAR_FORMAT, is_dir_writeable
 from .augment import *
 from .base import BaseDataset
 from .utils import HELP_URL, LOCAL_RANK, get_hash, img2label_paths, verify_image_label
 
 
 class YOLODataset(BaseDataset):
-    cache_version = 1.0  # dataset labels *.cache version, >= 1.0 for YOLOv8
+    cache_version = '1.0.1'  # dataset labels *.cache version, >= 1.0.0 for YOLOv8
     rand_interp_methods = [cv2.INTER_NEAREST, cv2.INTER_LINEAR, cv2.INTER_CUBIC, cv2.INTER_AREA, cv2.INTER_LANCZOS4]
     """YOLO Dataset.
     Args:
@@ -22,42 +22,40 @@ class YOLODataset(BaseDataset):
         prefix (str): prefix.
     """
 
-    def __init__(
-        self,
-        img_path,
-        imgsz=640,
-        label_path=None,
-        cache=False,
-        augment=True,
-        hyp=None,
-        prefix="",
-        rect=False,
-        batch_size=None,
-        stride=32,
-        pad=0.0,
-        single_cls=False,
-        use_segments=False,
-        use_keypoints=False,
-    ):
+    def __init__(self,
+                 img_path,
+                 imgsz=640,
+                 cache=False,
+                 augment=True,
+                 hyp=None,
+                 prefix="",
+                 rect=False,
+                 batch_size=None,
+                 stride=32,
+                 pad=0.0,
+                 single_cls=False,
+                 use_segments=False,
+                 use_keypoints=False,
+                 names=None):
         self.use_segments = use_segments
         self.use_keypoints = use_keypoints
+        self.names = names
         assert not (self.use_segments and self.use_keypoints), "Can not use both segments and keypoints."
-        super().__init__(img_path, imgsz, label_path, cache, augment, hyp, prefix, rect, batch_size, stride, pad,
-                         single_cls)
+        super().__init__(img_path, imgsz, cache, augment, hyp, prefix, rect, batch_size, stride, pad, single_cls)
 
     def cache_labels(self, path=Path("./labels.cache")):
         # Cache dataset labels, check images and read shapes
+        if path.exists():
+            path.unlink()  # remove *.cache file if exists
         x = {"labels": []}
         nm, nf, ne, nc, msgs = 0, 0, 0, 0, []  # number missing, found, empty, corrupt, messages
         desc = f"{self.prefix}Scanning {path.parent / path.stem}..."
-        with Pool(NUM_THREADS) as pool:
-            pbar = tqdm(
-                pool.imap(verify_image_label,
-                          zip(self.im_files, self.label_files, repeat(self.prefix), repeat(self.use_keypoints))),
-                desc=desc,
-                total=len(self.im_files),
-                bar_format=TQDM_BAR_FORMAT,
-            )
+        total = len(self.im_files)
+        with ThreadPool(NUM_THREADS) as pool:
+            results = pool.imap(func=verify_image_label,
+                                iterable=zip(self.im_files, self.label_files, repeat(self.prefix),
+                                             repeat(self.use_keypoints), repeat(len(self.names))))
+            pbar = tqdm(results, desc=desc, total=total, bar_format=TQDM_BAR_FORMAT)
             for im_file, lb, shape, segments, keypoint, nm_f, nf_f, ne_f, nc_f, msg in pbar:
                 nm += nm_f
                 nf += nf_f
@@ -73,13 +71,12 @@ class YOLODataset(BaseDataset):
                             segments=segments,
                             keypoints=keypoint,
                             normalized=True,
-                            bbox_format="xywh",
-                        ))
+                            bbox_format="xywh"))
                 if msg:
                     msgs.append(msg)
                 pbar.desc = f"{desc} {nf} images, {nm + ne} backgrounds, {nc} corrupt"
+            pbar.close()
 
-        pbar.close()
         if msgs:
             LOGGER.info("\n".join(msgs))
         if nf == 0:
@@ -88,14 +85,12 @@ class YOLODataset(BaseDataset):
         x["results"] = nf, nm, ne, nc, len(self.im_files)
         x["msgs"] = msgs  # warnings
         x["version"] = self.cache_version  # cache version
-        self.im_files = [lb["im_file"] for lb in x["labels"]]
-        try:
-            np.save(path, x)  # save cache for next time
+        if is_dir_writeable(path.parent):
+            np.save(str(path), x)  # save cache for next time
             path.with_suffix(".cache.npy").rename(path)  # remove .npy suffix
             LOGGER.info(f"{self.prefix}New cache created: {path}")
-        except Exception as e:
-            LOGGER.warning(
-                f"{self.prefix}WARNING ⚠️ Cache directory {path.parent} is not writeable: {e}")  # not writeable
+        else:
+            LOGGER.warning(f"{self.prefix}WARNING ⚠️ Cache directory {path.parent} is not writeable")  # not writeable
         return x
 
     def get_labels(self):
@@ -105,7 +100,7 @@ class YOLODataset(BaseDataset):
             cache, exists = np.load(str(cache_path), allow_pickle=True).item(), True  # load dict
             assert cache["version"] == self.cache_version  # matches current version
             assert cache["hash"] == get_hash(self.label_files + self.im_files)  # identical hash
-        except Exception:
+        except (FileNotFoundError, AssertionError, AttributeError):
             cache, exists = self.cache_labels(cache_path), False  # run cache ops
 
         # Display cache
@@ -115,20 +110,35 @@ class YOLODataset(BaseDataset):
             tqdm(None, desc=self.prefix + d, total=n, initial=n, bar_format=TQDM_BAR_FORMAT)  # display cache results
             if cache["msgs"]:
                 LOGGER.info("\n".join(cache["msgs"]))  # display warnings
-        assert nf > 0, f"{self.prefix}No labels found in {cache_path}, can not start training. {HELP_URL}"
+        if nf == 0:  # number of labels found
+            raise FileNotFoundError(f"{self.prefix}No labels found in {cache_path}, can not start training. {HELP_URL}")
 
         # Read cache
         [cache.pop(k) for k in ("hash", "version", "msgs")]  # remove items
         labels = cache["labels"]
-        nl = len(np.concatenate([label["cls"] for label in labels], 0))  # number of labels
-        assert nl > 0, f"{self.prefix}All labels empty in {cache_path}, can not start training. {HELP_URL}"
+        self.im_files = [lb["im_file"] for lb in labels]  # update im_files
+
+        # Check if the dataset is all boxes or all segments
+        len_cls = sum(len(lb["cls"]) for lb in labels)
+        len_boxes = sum(len(lb["bboxes"]) for lb in labels)
+        len_segments = sum(len(lb["segments"]) for lb in labels)
+        if len_segments and len_boxes != len_segments:
+            LOGGER.warning(
+                f"WARNING ⚠️ Box and segment counts should be equal, but got len(segments) = {len_segments}, "
+                f"len(boxes) = {len_boxes}. To resolve this only boxes will be used and all segments will be removed. "
+                "To avoid this please supply either a detect or segment dataset, not a detect-segment mixed dataset.")
+            for lb in labels:
+                lb["segments"] = []
+        if len_cls == 0:
+            raise ValueError(f"All labels empty in {cache_path}, can not start training without labels. {HELP_URL}")
         return labels
 
     # TODO: use hyp config to set all these augmentations
     def build_transforms(self, hyp=None):
         if self.augment:
-            mosaic = self.augment and not self.rect
-            transforms = mosaic_transforms(self, self.imgsz, hyp) if mosaic else affine_transforms(self.imgsz, hyp)
+            hyp.mosaic = hyp.mosaic if self.augment and not self.rect else 0.0
+            hyp.mixup = hyp.mixup if self.augment and not self.rect else 0.0
+            transforms = v8_transforms(self, self.imgsz, hyp)
         else:
             transforms = Compose([LetterBox(new_shape=(self.imgsz, self.imgsz), scaleup=False)])
         transforms.append(
@@ -136,17 +146,16 @@ class YOLODataset(BaseDataset):
                    normalize=True,
                    return_mask=self.use_segments,
                    return_keypoint=self.use_keypoints,
-                   batch_idx=True))
+                   batch_idx=True,
+                   mask_ratio=hyp.mask_ratio,
+                   mask_overlap=hyp.overlap_mask))
         return transforms
 
     def close_mosaic(self, hyp):
-        self.transforms = affine_transforms(self.imgsz, hyp)
-        self.transforms.append(
-            Format(bbox_format="xywh",
-                   normalize=True,
-                   return_mask=self.use_segments,
-                   return_keypoint=self.use_keypoints,
-                   batch_idx=True))
+        hyp.mosaic = 0.0  # set mosaic ratio=0.0
+        hyp.copy_paste = 0.0  # keep the same behavior as previous v8 close-mosaic
+        hyp.mixup = 0.0  # keep the same behavior as previous v8 close-mosaic
+        self.transforms = self.build_transforms(hyp)
 
     def update_labels_info(self, label):
         """custom your label format here"""
@@ -162,8 +171,6 @@ class YOLODataset(BaseDataset):
 
     @staticmethod
     def collate_fn(batch):
-        # TODO: returning a dict can make thing easier and cleaner when using dataset in training
-        # but I don't know if this will slow down a little bit.
         new_batch = {}
         keys = batch[0].keys()
         values = list(zip(*[list(b.values()) for b in batch]))

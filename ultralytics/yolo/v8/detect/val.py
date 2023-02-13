@@ -3,15 +3,14 @@
 import os
 from pathlib import Path
 
-import hydra
 import numpy as np
 import torch
 
 from ultralytics.yolo.data import build_dataloader
 from ultralytics.yolo.data.dataloaders.v5loader import create_dataloader
 from ultralytics.yolo.engine.validator import BaseValidator
-from ultralytics.yolo.utils import DEFAULT_CONFIG, colorstr, ops, yaml_load
-from ultralytics.yolo.utils.checks import check_file, check_requirements
+from ultralytics.yolo.utils import DEFAULT_CFG, colorstr, ops
+from ultralytics.yolo.utils.checks import check_requirements
 from ultralytics.yolo.utils.metrics import ConfusionMatrix, DetMetrics, box_iou
 from ultralytics.yolo.utils.plotting import output_to_target, plot_images
 from ultralytics.yolo.utils.torch_utils import de_parallel
@@ -21,7 +20,7 @@ class DetectionValidator(BaseValidator):
 
     def __init__(self, dataloader=None, save_dir=None, pbar=None, logger=None, args=None):
         super().__init__(dataloader, save_dir, pbar, logger, args)
-        self.data_dict = yaml_load(check_file(self.args.data), append_filename=True) if self.args.data else None
+        self.args.task = 'detect'
         self.is_coco = False
         self.class_map = None
         self.metrics = DetMetrics(save_dir=self.save_dir)
@@ -41,13 +40,12 @@ class DetectionValidator(BaseValidator):
         return batch
 
     def init_metrics(self, model):
-        head = model.model[-1] if self.training else model.model.model[-1]
-        val = self.data.get('val', '')  # validation path
+        val = self.data.get(self.args.split, '')  # validation path
         self.is_coco = isinstance(val, str) and val.endswith(f'coco{os.sep}val2017.txt')  # is COCO dataset
         self.class_map = ops.coco80_to_coco91_class() if self.is_coco else list(range(1000))
         self.args.save_json |= self.is_coco and not self.training  # run on final val if training COCO
-        self.nc = head.nc
         self.names = model.names
+        self.nc = len(model.names)
         self.metrics.names = self.names
         self.metrics.plot = self.args.plots
         self.confusion_matrix = ConfusionMatrix(nc=self.nc)
@@ -128,7 +126,7 @@ class DetectionValidator(BaseValidator):
                 f'WARNING ⚠️ no labels found in {self.args.task} set, can not compute metrics without labels')
 
         # Print results per class
-        if (self.args.verbose or not self.training) and self.nc > 1 and len(self.stats):
+        if self.args.verbose and not self.training and self.nc > 1 and len(self.stats):
             for i, c in enumerate(self.metrics.ap_class_index):
                 self.logger.info(pf % (self.names[c], self.seen, self.nt_per_class[c], *self.metrics.class_result(i)))
 
@@ -168,15 +166,16 @@ class DetectionValidator(BaseValidator):
                                  imgsz=self.args.imgsz,
                                  batch_size=batch_size,
                                  stride=gs,
-                                 hyp=dict(self.args),
+                                 hyp=vars(self.args),
                                  cache=False,
                                  pad=0.5,
-                                 rect=True,
+                                 rect=self.args.rect,
                                  workers=self.args.workers,
                                  prefix=colorstr(f'{self.args.mode}: '),
                                  shuffle=False,
                                  seed=self.args.seed)[0] if self.args.v5loader else \
-            build_dataloader(self.args, batch_size, img_path=dataset_path, stride=gs, mode="val")[0]
+            build_dataloader(self.args, batch_size, img_path=dataset_path, stride=gs, names=self.data['names'],
+                             mode="val")[0]
 
     def plot_val_samples(self, batch, ni):
         plot_images(batch["img"],
@@ -232,12 +231,17 @@ class DetectionValidator(BaseValidator):
         return stats
 
 
-@hydra.main(version_base=None, config_path=str(DEFAULT_CONFIG.parent), config_name=DEFAULT_CONFIG.name)
-def val(cfg):
-    cfg.model = cfg.model or "yolov8n.pt"
-    cfg.data = cfg.data or "coco128.yaml"
-    validator = DetectionValidator(args=cfg)
-    validator(model=cfg.model)
+def val(cfg=DEFAULT_CFG, use_python=False):
+    model = cfg.model or "yolov8n.pt"
+    data = cfg.data or "coco128.yaml"
+
+    args = dict(model=model, data=data)
+    if use_python:
+        from ultralytics import YOLO
+        YOLO(model).val(**args)
+    else:
+        validator = DetectionValidator(args=args)
+        validator(model=args['model'])
 
 
 if __name__ == "__main__":

@@ -13,9 +13,19 @@ import torch.nn as nn
 from PIL import Image
 
 from ultralytics.yolo.utils import LOGGER, ROOT, yaml_load
-from ultralytics.yolo.utils.checks import check_requirements, check_suffix, check_version
-from ultralytics.yolo.utils.downloads import attempt_download, is_url
+from ultralytics.yolo.utils.checks import check_requirements, check_suffix, check_version, check_yaml
+from ultralytics.yolo.utils.downloads import attempt_download_asset, is_url
 from ultralytics.yolo.utils.ops import xywh2xyxy
+
+
+def check_class_names(names):
+    # Check class names. Map imagenet class codes to human-readable names if required. Convert lists to dicts.
+    if isinstance(names, list):  # names is a list
+        names = dict(enumerate(names))  # convert to dict
+    if isinstance(names[0], str) and names[0].startswith('n0'):  # imagenet class codes, i.e. 'n01440764'
+        map = yaml_load(ROOT / 'yolo/data/datasets/ImageNet.yaml')['map']  # human-readable names
+        names = {k: map[v] for k, v in names.items()}
+    return names
 
 
 class AutoBackend(nn.Module):
@@ -28,7 +38,7 @@ class AutoBackend(nn.Module):
             weights (str): The path to the weights file. Default: 'yolov8n.pt'
             device (torch.device): The device to run the model on.
             dnn (bool): Use OpenCV's DNN module for inference if True, defaults to False.
-            data (dict): Additional data, optional
+            data (str), (Path): Additional data.yaml file for class names, optional
             fp16 (bool): If True, use half precision. Default: False
             fuse (bool): Whether to fuse the model or not. Default: True
 
@@ -58,7 +68,7 @@ class AutoBackend(nn.Module):
         model = None  # TODO: resolves ONNX inference, verify effect on other backends
         cuda = torch.cuda.is_available() and device.type != 'cpu'  # use CUDA
         if not (pt or triton or nn_module):
-            w = attempt_download(w)  # download if not local
+            w = attempt_download_asset(w)  # download if not local
 
         # NOTE: special case: in-memory pytorch model
         if nn_module:
@@ -222,13 +232,13 @@ class AutoBackend(nn.Module):
             nhwc = model.runtime.startswith("tensorflow")
             '''
         else:
-            raise NotImplementedError(f'ERROR: {w} is not a supported format')
+            raise NotImplementedError(f"ERROR: '{w}' is not a supported format. For supported formats see "
+                                      f"https://docs.ultralytics.com/reference/nn/")
 
         # class names
-        if 'names' not in locals():
-            names = yaml_load(data)['names'] if data else {i: f'class{i}' for i in range(999)}
-        if names[0] == 'n01440764' and len(names) == 1000:  # ImageNet
-            names = yaml_load(ROOT / 'yolo/data/datasets/ImageNet.yaml')['names']  # human-readable names
+        if 'names' not in locals():  # names missing
+            names = yaml_load(check_yaml(data))['names'] if data else {i: f'class{i}' for i in range(999)}  # assign
+        names = check_class_names(names)
 
         self.__dict__.update(locals())  # assign all variables to self
 
