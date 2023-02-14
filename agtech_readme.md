@@ -27,7 +27,7 @@
 > > train: [train images(relative)] <br>
 > > val: [val images(relative)] <br>
 > > test: [test images(relative)] #optional <br>
-> > \#classes 
+> > \#classes <br>
 > > names: <br>
 > >   0: Flower <br>
 > >   1: Before_blooming <br>
