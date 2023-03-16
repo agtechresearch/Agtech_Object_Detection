@@ -37,7 +37,7 @@ To request an Enterprise License please complete the form at [Ultralytics Licens
     <a href="https://github.com/ultralytics" style="text-decoration:none;">
       <img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-github.png" width="2%" alt="" /></a>
     <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="2%" alt="" />
-    <a href="https://www.linkedin.com/company/ultralytics" style="text-decoration:none;">
+    <a href="https://www.linkedin.com/company/ultralytics/" style="text-decoration:none;">
       <img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-linkedin.png" width="2%" alt="" /></a>
     <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="2%" alt="" />
     <a href="https://twitter.com/ultralytics" style="text-decoration:none;">
@@ -67,7 +67,7 @@ full documentation on training, validation, prediction and deployment.
 
 Pip install the ultralytics package including
 all [requirements.txt](https://github.com/ultralytics/ultralytics/blob/main/requirements.txt) in a
-[**3.10>=Python>=3.7**](https://www.python.org/) environment, including
+[**Python>=3.7**](https://www.python.org/) environment with
 [**PyTorch>=1.7**](https://pytorch.org/get-started/locally/).
 
 ```bash
@@ -88,12 +88,12 @@ yolo predict model=yolov8n.pt source="https://ultralytics.com/images/bus.jpg"
 ```
 
 `yolo` can be used for a variety of tasks and modes and accepts additional arguments, i.e. `imgsz=640`. See the YOLOv8
-[CLI Docs](https://docs.ultralytics.com/cli) for examples.
+[CLI Docs](https://docs.ultralytics.com/usage/cli) for examples.
 
 #### Python
 
 YOLOv8 may also be used directly in a Python environment, and accepts the
-same [arguments](https://docs.ultralytics.com/cfg/) as in the CLI example above:
+same [arguments](https://docs.ultralytics.com/usage/cfg/) as in the CLI example above:
 
 ```python
 from ultralytics import YOLO
@@ -111,7 +111,13 @@ success = model.export(format="onnx")  # export the model to ONNX format
 
 [Models](https://github.com/ultralytics/ultralytics/tree/main/ultralytics/models) download automatically from the latest
 Ultralytics [release](https://github.com/ultralytics/assets/releases). See
-YOLOv8 [Python Docs](https://docs.ultralytics.com/python) for more examples.
+YOLOv8 [Python Docs](https://docs.ultralytics.com/usage/python) for more examples.
+
+#### Model Architectures
+
+⭐ **NEW** YOLOv5u anchor free models are now available.
+
+All supported model architectures can be found in the [Models](./ultralytics/models/) section.
 
 #### Known Issues / TODOs
 
@@ -119,8 +125,8 @@ We are still working on several parts of YOLOv8! We aim to have these completed 
 to par with YOLOv5, including export and inference to all the same formats. We are also writing a YOLOv8 paper which we
 will submit to [arxiv.org](https://arxiv.org) once complete.
 
-- [ ] TensorFlow exports
-- [ ] DDP resume
+- [x] TensorFlow exports
+- [x] DDP resume
 - [ ] [arxiv.org](https://arxiv.org) paper
 
 </details>
@@ -135,7 +141,7 @@ Ultralytics [release](https://github.com/ultralytics/assets/releases) on first u
 
 <details open><summary>Detection</summary>
 
-See [Detection Docs](https://docs.ultralytics.com/tasks/detection/) for usage examples with these models.
+See [Detection Docs](https://docs.ultralytics.com/tasks/detect/) for usage examples with these models.
 
 | Model                                                                                | size<br><sup>(pixels) | mAP<sup>val<br>50-95 | Speed<br><sup>CPU ONNX<br>(ms) | Speed<br><sup>A100 TensorRT<br>(ms) | params<br><sup>(M) | FLOPs<br><sup>(B) |
 | ------------------------------------------------------------------------------------ | --------------------- | -------------------- | ------------------------------ | ----------------------------------- | ------------------ | ----------------- |
@@ -155,15 +161,15 @@ See [Detection Docs](https://docs.ultralytics.com/tasks/detection/) for usage ex
 
 <details><summary>Segmentation</summary>
 
-See [Segmentation Docs](https://docs.ultralytics.com/tasks/segmentation/) for usage examples with these models.
+See [Segmentation Docs](https://docs.ultralytics.com/tasks/segment/) for usage examples with these models.
 
-| Model                                                                                    | size<br><sup>(pixels) | mAP<sup>box<br>50-95 | mAP<sup>mask<br>50-95 | Speed<br><sup>CPU ONNX<br>(ms) | Speed<br><sup>A100 TensorRT<br>(ms) | params<br><sup>(M) | FLOPs<br><sup>(B) |
-| ---------------------------------------------------------------------------------------- | --------------------- | -------------------- | --------------------- | ------------------------------ | ----------------------------------- | ------------------ | ----------------- |
-| [YOLOv8n](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n-seg.pt) | 640                   | 36.7                 | 30.5                  | 96.1                           | 1.21                                | 3.4                | 12.6              |
-| [YOLOv8s](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8s-seg.pt) | 640                   | 44.6                 | 36.8                  | 155.7                          | 1.47                                | 11.8               | 42.6              |
-| [YOLOv8m](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8m-seg.pt) | 640                   | 49.9                 | 40.8                  | 317.0                          | 2.18                                | 27.3               | 110.2             |
-| [YOLOv8l](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8l-seg.pt) | 640                   | 52.3                 | 42.6                  | 572.4                          | 2.79                                | 46.0               | 220.5             |
-| [YOLOv8x](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8x-seg.pt) | 640                   | 53.4                 | 43.4                  | 712.1                          | 4.02                                | 71.8               | 344.1             |
+| Model                                                                                        | size<br><sup>(pixels) | mAP<sup>box<br>50-95 | mAP<sup>mask<br>50-95 | Speed<br><sup>CPU ONNX<br>(ms) | Speed<br><sup>A100 TensorRT<br>(ms) | params<br><sup>(M) | FLOPs<br><sup>(B) |
+| -------------------------------------------------------------------------------------------- | --------------------- | -------------------- | --------------------- | ------------------------------ | ----------------------------------- | ------------------ | ----------------- |
+| [YOLOv8n-seg](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n-seg.pt) | 640                   | 36.7                 | 30.5                  | 96.1                           | 1.21                                | 3.4                | 12.6              |
+| [YOLOv8s-seg](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8s-seg.pt) | 640                   | 44.6                 | 36.8                  | 155.7                          | 1.47                                | 11.8               | 42.6              |
+| [YOLOv8m-seg](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8m-seg.pt) | 640                   | 49.9                 | 40.8                  | 317.0                          | 2.18                                | 27.3               | 110.2             |
+| [YOLOv8l-seg](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8l-seg.pt) | 640                   | 52.3                 | 42.6                  | 572.4                          | 2.79                                | 46.0               | 220.5             |
+| [YOLOv8x-seg](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8x-seg.pt) | 640                   | 53.4                 | 43.4                  | 712.1                          | 4.02                                | 71.8               | 344.1             |
 
 - **mAP<sup>val</sup>** values are for single-model single-scale on [COCO val2017](http://cocodataset.org) dataset.
   <br>Reproduce by `yolo val segment data=coco.yaml device=0`
@@ -175,15 +181,15 @@ See [Segmentation Docs](https://docs.ultralytics.com/tasks/segmentation/) for us
 
 <details><summary>Classification</summary>
 
-See [Classification Docs](https://docs.ultralytics.com/tasks/classification/) for usage examples with these models.
+See [Classification Docs](https://docs.ultralytics.com/tasks/classify/) for usage examples with these models.
 
-| Model                                                                                    | size<br><sup>(pixels) | acc<br><sup>top1 | acc<br><sup>top5 | Speed<br><sup>CPU ONNX<br>(ms) | Speed<br><sup>A100 TensorRT<br>(ms) | params<br><sup>(M) | FLOPs<br><sup>(B) at 640 |
-| ---------------------------------------------------------------------------------------- | --------------------- | ---------------- | ---------------- | ------------------------------ | ----------------------------------- | ------------------ | ------------------------ |
-| [YOLOv8n](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n-cls.pt) | 224                   | 66.6             | 87.0             | 12.9                           | 0.31                                | 2.7                | 4.3                      |
-| [YOLOv8s](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8s-cls.pt) | 224                   | 72.3             | 91.1             | 23.4                           | 0.35                                | 6.4                | 13.5                     |
-| [YOLOv8m](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8m-cls.pt) | 224                   | 76.4             | 93.2             | 85.4                           | 0.62                                | 17.0               | 42.7                     |
-| [YOLOv8l](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8l-cls.pt) | 224                   | 78.0             | 94.1             | 163.0                          | 0.87                                | 37.5               | 99.7                     |
-| [YOLOv8x](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8x-cls.pt) | 224                   | 78.4             | 94.3             | 232.0                          | 1.01                                | 57.4               | 154.8                    |
+| Model                                                                                        | size<br><sup>(pixels) | acc<br><sup>top1 | acc<br><sup>top5 | Speed<br><sup>CPU ONNX<br>(ms) | Speed<br><sup>A100 TensorRT<br>(ms) | params<br><sup>(M) | FLOPs<br><sup>(B) at 640 |
+| -------------------------------------------------------------------------------------------- | --------------------- | ---------------- | ---------------- | ------------------------------ | ----------------------------------- | ------------------ | ------------------------ |
+| [YOLOv8n-cls](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8n-cls.pt) | 224                   | 66.6             | 87.0             | 12.9                           | 0.31                                | 2.7                | 4.3                      |
+| [YOLOv8s-cls](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8s-cls.pt) | 224                   | 72.3             | 91.1             | 23.4                           | 0.35                                | 6.4                | 13.5                     |
+| [YOLOv8m-cls](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8m-cls.pt) | 224                   | 76.4             | 93.2             | 85.4                           | 0.62                                | 17.0               | 42.7                     |
+| [YOLOv8l-cls](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8l-cls.pt) | 224                   | 78.0             | 94.1             | 163.0                          | 0.87                                | 37.5               | 99.7                     |
+| [YOLOv8x-cls](https://github.com/ultralytics/assets/releases/download/v0.0.0/yolov8x-cls.pt) | 224                   | 78.4             | 94.3             | 232.0                          | 1.01                                | 57.4               | 154.8                    |
 
 - **acc** values are model accuracies on the [ImageNet](https://www.image-net.org/) dataset validation set.
   <br>Reproduce by `yolo val classify data=path/to/ImageNet device=0`
@@ -208,7 +214,7 @@ See [Classification Docs](https://docs.ultralytics.com/tasks/classification/) fo
   <a href="https://cutt.ly/yolov5-readme-clearml">
     <img src="https://github.com/ultralytics/assets/raw/main/partners/logo-clearml.png" width="10%" /></a>
   <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="15%" height="0" alt="" />
-  <a href="https://bit.ly/yolov5-readme-comet">
+  <a href="https://bit.ly/yolov5-readme-comet2">
     <img src="https://github.com/ultralytics/assets/raw/main/partners/logo-comet.png" width="10%" /></a>
   <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="15%" height="0" alt="" />
   <a href="https://bit.ly/yolov5-neuralmagic">
@@ -221,9 +227,10 @@ See [Classification Docs](https://docs.ultralytics.com/tasks/classification/) fo
 
 ## <div align="center">Ultralytics HUB</div>
 
-[Ultralytics HUB](https://bit.ly/ultralytics_hub) is our ⭐ **NEW** no-code solution to visualize datasets, train YOLOv8
-🚀 models, and deploy to the real world in a seamless experience. Get started for **Free** now! Also run YOLOv8 models on
-your iOS or Android device by downloading the [Ultralytics App](https://ultralytics.com/app_install)!
+Experience seamless AI with [Ultralytics HUB](https://bit.ly/ultralytics_hub) ⭐, the all-in-one solution for data
+visualization, YOLOv5 and YOLOv8 (coming soon) 🚀 model training and deployment, without any coding. Transform images
+into actionable insights and bring your AI visions to life with ease using our cutting-edge platform and
+user-friendly [Ultralytics App](https://ultralytics.com/app_install). Start your journey for **Free** now!
 
 <a href="https://bit.ly/ultralytics_hub" target="_blank">
 <img width="100%" src="https://github.com/ultralytics/assets/raw/main/im/ultralytics-hub.png"></a>
@@ -238,7 +245,7 @@ on your experience. Thank you 🙏 to all our contributors!
 <!-- SVG image from https://opencollective.com/ultralytics/contributors.svg?width=990 -->
 
 <a href="https://github.com/ultralytics/yolov5/graphs/contributors">
-<img src="https://github.com/ultralytics/assets/raw/main/im/image-contributors.png" /></a>
+<img width="100%" src="https://github.com/ultralytics/assets/raw/main/im/image-contributors.png"></a>
 
 ## <div align="center">License</div>
 
@@ -251,15 +258,16 @@ YOLOv8 is available under two different licenses:
 
 ## <div align="center">Contact</div>
 
-For YOLOv8 bugs and feature requests please visit [GitHub Issues](https://github.com/ultralytics/ultralytics/issues).
-For professional support please [Contact Us](https://ultralytics.com/contact).
+For YOLOv8 bug reports and feature requests please
+visit [GitHub Issues](https://github.com/ultralytics/ultralytics/issues) or
+the [Ultralytics Community Forum](https://community.ultralytics.com/).
 
 <br>
 <div align="center">
   <a href="https://github.com/ultralytics" style="text-decoration:none;">
     <img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-github.png" width="3%" alt="" /></a>
   <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="3%" alt="" />
-  <a href="https://www.linkedin.com/company/ultralytics" style="text-decoration:none;">
+  <a href="https://www.linkedin.com/company/ultralytics/" style="text-decoration:none;">
     <img src="https://github.com/ultralytics/assets/raw/main/social/logo-social-linkedin.png" width="3%" alt="" /></a>
   <img src="https://github.com/ultralytics/assets/raw/main/social/logo-transparent.png" width="3%" alt="" />
   <a href="https://twitter.com/ultralytics" style="text-decoration:none;">
