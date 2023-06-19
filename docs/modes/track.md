@@ -1,4 +1,10 @@
-<img width="1024" src="https://github.com/ultralytics/assets/raw/main/yolov8/banner-integrations.png">
+---
+comments: true
+description: Explore YOLOv8n-based object tracking with Ultralytics' BoT-SORT and ByteTrack. Learn configuration, usage, and customization tips.
+keywords: object tracking, YOLO, trackers, BoT-SORT, ByteTrack
+---
+
+<img width="1024" src="https://user-images.githubusercontent.com/26833433/243418637-1d6250fd-1515-4c10-a844-a32818ae6d46.png">
 
 Object tracking is a task that involves identifying the location and class of objects, then assigning a unique ID to
 that detection in video streams.
@@ -26,9 +32,9 @@ Use a trained YOLOv8n/YOLOv8n-seg model to run tracker on video streams.
         from ultralytics import YOLO
         
         # Load a model
-        model = YOLO("yolov8n.pt")  # load an official detection model
-        model = YOLO("yolov8n-seg.pt")  # load an official segmentation model
-        model = YOLO("path/to/best.pt")  # load a custom model
+        model = YOLO('yolov8n.pt')  # load an official detection model
+        model = YOLO('yolov8n-seg.pt')  # load an official segmentation model
+        model = YOLO('path/to/best.pt')  # load a custom model
         
         # Track with the model
         results = model.track(source="https://youtu.be/Zgi9g1ksQHc", show=True) 
@@ -60,7 +66,7 @@ to [predict page](https://docs.ultralytics.com/modes/predict/).
         ```python
         from ultralytics import YOLO
         
-        model = YOLO("yolov8n.pt")
+        model = YOLO('yolov8n.pt')
         results = model.track(source="https://youtu.be/Zgi9g1ksQHc", conf=0.3, iou=0.5, show=True) 
         ```
     === "CLI"
@@ -82,7 +88,7 @@ any configurations(expect the `tracker_type`) you need to.
         ```python
         from ultralytics import YOLO
         
-        model = YOLO("yolov8n.pt")
+        model = YOLO('yolov8n.pt')
         results = model.track(source="https://youtu.be/Zgi9g1ksQHc", tracker='custom_tracker.yaml') 
         ```
     === "CLI"
@@ -93,4 +99,3 @@ any configurations(expect the `tracker_type`) you need to.
 
 Please refer to [ultralytics/tracker/cfg](https://github.com/ultralytics/ultralytics/tree/main/ultralytics/tracker/cfg)
 page
-

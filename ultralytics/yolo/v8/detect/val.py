@@ -1,4 +1,4 @@
-# Ultralytics YOLO 🚀, GPL-3.0 license
+# Ultralytics YOLO 🚀, AGPL-3.0 license
 
 import os
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ultralytics.yolo.data import build_dataloader
+from ultralytics.yolo.data import build_dataloader, build_yolo_dataset
 from ultralytics.yolo.data.dataloaders.v5loader import create_dataloader
 from ultralytics.yolo.engine.validator import BaseValidator
 from ultralytics.yolo.utils import DEFAULT_CFG, LOGGER, colorstr, ops
@@ -18,16 +18,18 @@ from ultralytics.yolo.utils.torch_utils import de_parallel
 
 class DetectionValidator(BaseValidator):
 
-    def __init__(self, dataloader=None, save_dir=None, pbar=None, args=None):
-        super().__init__(dataloader, save_dir, pbar, args)
+    def __init__(self, dataloader=None, save_dir=None, pbar=None, args=None, _callbacks=None):
+        """Initialize detection model with necessary variables and settings."""
+        super().__init__(dataloader, save_dir, pbar, args, _callbacks)
         self.args.task = 'detect'
         self.is_coco = False
         self.class_map = None
-        self.metrics = DetMetrics(save_dir=self.save_dir)
+        self.metrics = DetMetrics(save_dir=self.save_dir, on_plot=self.on_plot)
         self.iouv = torch.linspace(0.5, 0.95, 10)  # iou vector for mAP@0.5:0.95
         self.niou = self.iouv.numel()
 
     def preprocess(self, batch):
+        """Preprocesses batch of images for YOLO training."""
         batch['img'] = batch['img'].to(self.device, non_blocking=True)
         batch['img'] = (batch['img'].half() if self.args.half else batch['img'].float()) / 255
         for k in ['batch_idx', 'cls', 'bboxes']:
@@ -40,8 +42,9 @@ class DetectionValidator(BaseValidator):
         return batch
 
     def init_metrics(self, model):
+        """Initialize evaluation metrics for YOLO."""
         val = self.data.get(self.args.split, '')  # validation path
-        self.is_coco = isinstance(val, str) and val.endswith(f'coco{os.sep}val2017.txt')  # is COCO dataset
+        self.is_coco = isinstance(val, str) and 'coco' in val and val.endswith(f'{os.sep}val2017.txt')  # is COCO
         self.class_map = ops.coco80_to_coco91_class() if self.is_coco else list(range(1000))
         self.args.save_json |= self.is_coco and not self.training  # run on final val if training COCO
         self.names = model.names
@@ -54,20 +57,21 @@ class DetectionValidator(BaseValidator):
         self.stats = []
 
     def get_desc(self):
+        """Return a formatted string summarizing class metrics of YOLO model."""
         return ('%22s' + '%11s' * 6) % ('Class', 'Images', 'Instances', 'Box(P', 'R', 'mAP50', 'mAP50-95)')
 
     def postprocess(self, preds):
-        preds = ops.non_max_suppression(preds,
-                                        self.args.conf,
-                                        self.args.iou,
-                                        labels=self.lb,
-                                        multi_label=True,
-                                        agnostic=self.args.single_cls,
-                                        max_det=self.args.max_det)
-        return preds
+        """Apply Non-maximum suppression to prediction outputs."""
+        return ops.non_max_suppression(preds,
+                                       self.args.conf,
+                                       self.args.iou,
+                                       labels=self.lb,
+                                       multi_label=True,
+                                       agnostic=self.args.single_cls,
+                                       max_det=self.args.max_det)
 
     def update_metrics(self, preds, batch):
-        # Metrics
+        """Metrics."""
         for si, pred in enumerate(preds):
             idx = batch['batch_idx'] == si
             cls = batch['cls'][idx]
@@ -108,14 +112,17 @@ class DetectionValidator(BaseValidator):
             # Save
             if self.args.save_json:
                 self.pred_to_json(predn, batch['im_file'][si])
-            # if self.args.save_txt:
-            #    save_one_txt(predn, save_conf, shape, file=save_dir / 'labels' / f'{path.stem}.txt')
+            if self.args.save_txt:
+                file = self.save_dir / 'labels' / f'{Path(batch["im_file"][si]).stem}.txt'
+                self.save_one_txt(predn, self.args.save_conf, shape, file)
 
     def finalize_metrics(self, *args, **kwargs):
+        """Set final values for metrics speed and confusion matrix."""
         self.metrics.speed = self.speed
         self.metrics.confusion_matrix = self.confusion_matrix
 
     def get_stats(self):
+        """Returns metrics statistics and results dictionary."""
         stats = [torch.cat(x, 0).cpu().numpy() for x in zip(*self.stats)]  # to numpy
         if len(stats) and stats[0].any():
             self.metrics.process(*stats)
@@ -123,6 +130,7 @@ class DetectionValidator(BaseValidator):
         return self.metrics.results_dict
 
     def print_results(self):
+        """Prints training/validation set metrics per class."""
         pf = '%22s' + '%11i' * 2 + '%11.3g' * len(self.metrics.keys)  # print format
         LOGGER.info(pf % ('all', self.seen, self.nt_per_class.sum(), *self.metrics.mean_results()))
         if self.nt_per_class.sum() == 0:
@@ -135,7 +143,11 @@ class DetectionValidator(BaseValidator):
                 LOGGER.info(pf % (self.names[c], self.seen, self.nt_per_class[c], *self.metrics.class_result(i)))
 
         if self.args.plots:
-            self.confusion_matrix.plot(save_dir=self.save_dir, names=list(self.names.values()))
+            for normalize in True, False:
+                self.confusion_matrix.plot(save_dir=self.save_dir,
+                                           names=self.names.values(),
+                                           normalize=normalize,
+                                           on_plot=self.on_plot)
 
     def _process_batch(self, detections, labels):
         """
@@ -162,42 +174,72 @@ class DetectionValidator(BaseValidator):
                 correct[matches[:, 1].astype(int), i] = True
         return torch.tensor(correct, dtype=torch.bool, device=detections.device)
 
-    def get_dataloader(self, dataset_path, batch_size):
-        # TODO: manage splits differently
-        # calculate stride - check if model is initialized
+    def build_dataset(self, img_path, mode='val', batch=None):
+        """Build YOLO Dataset
+
+        Args:
+            img_path (str): Path to the folder containing images.
+            mode (str): `train` mode or `val` mode, users are able to customize different augmentations for each mode.
+            batch (int, optional): Size of batches, this is for `rect`. Defaults to None.
+        """
         gs = max(int(de_parallel(self.model).stride if self.model else 0), 32)
-        return create_dataloader(path=dataset_path,
-                                 imgsz=self.args.imgsz,
-                                 batch_size=batch_size,
-                                 stride=gs,
-                                 hyp=vars(self.args),
-                                 cache=False,
-                                 pad=0.5,
-                                 rect=self.args.rect,
-                                 workers=self.args.workers,
-                                 prefix=colorstr(f'{self.args.mode}: '),
-                                 shuffle=False,
-                                 seed=self.args.seed)[0] if self.args.v5loader else \
-            build_dataloader(self.args, batch_size, img_path=dataset_path, stride=gs, names=self.data['names'],
-                             mode='val')[0]
+        return build_yolo_dataset(self.args, img_path, batch, self.data, mode=mode, stride=gs)
+
+    def get_dataloader(self, dataset_path, batch_size):
+        """TODO: manage splits differently."""
+        # Calculate stride - check if model is initialized
+        if self.args.v5loader:
+            LOGGER.warning("WARNING ⚠️ 'v5loader' feature is deprecated and will be removed soon. You can train using "
+                           'the default YOLOv8 dataloader instead, no argument is needed.')
+            gs = max(int(de_parallel(self.model).stride if self.model else 0), 32)
+            return create_dataloader(path=dataset_path,
+                                     imgsz=self.args.imgsz,
+                                     batch_size=batch_size,
+                                     stride=gs,
+                                     hyp=vars(self.args),
+                                     cache=False,
+                                     pad=0.5,
+                                     rect=self.args.rect,
+                                     workers=self.args.workers,
+                                     prefix=colorstr(f'{self.args.mode}: '),
+                                     shuffle=False,
+                                     seed=self.args.seed)[0]
+
+        dataset = self.build_dataset(dataset_path, batch=batch_size, mode='val')
+        dataloader = build_dataloader(dataset, batch_size, self.args.workers, shuffle=False, rank=-1)
+        return dataloader
 
     def plot_val_samples(self, batch, ni):
+        """Plot validation image samples."""
         plot_images(batch['img'],
                     batch['batch_idx'],
                     batch['cls'].squeeze(-1),
                     batch['bboxes'],
                     paths=batch['im_file'],
                     fname=self.save_dir / f'val_batch{ni}_labels.jpg',
-                    names=self.names)
+                    names=self.names,
+                    on_plot=self.on_plot)
 
     def plot_predictions(self, batch, preds, ni):
+        """Plots predicted bounding boxes on input images and saves the result."""
         plot_images(batch['img'],
-                    *output_to_target(preds, max_det=15),
+                    *output_to_target(preds, max_det=self.args.max_det),
                     paths=batch['im_file'],
                     fname=self.save_dir / f'val_batch{ni}_pred.jpg',
-                    names=self.names)  # pred
+                    names=self.names,
+                    on_plot=self.on_plot)  # pred
+
+    def save_one_txt(self, predn, save_conf, shape, file):
+        """Save YOLO detections to a txt file in normalized coordinates in a specific format."""
+        gn = torch.tensor(shape)[[1, 0, 1, 0]]  # normalization gain whwh
+        for *xyxy, conf, cls in predn.tolist():
+            xywh = (ops.xyxy2xywh(torch.tensor(xyxy).view(1, 4)) / gn).view(-1).tolist()  # normalized xywh
+            line = (cls, *xywh, conf) if save_conf else (cls, *xywh)  # label format
+            with open(file, 'a') as f:
+                f.write(('%g ' * len(line)).rstrip() % line + '\n')
 
     def pred_to_json(self, predn, filename):
+        """Serialize YOLO predictions to COCO json format."""
         stem = Path(filename).stem
         image_id = int(stem) if stem.isnumeric() else stem
         box = ops.xyxy2xywh(predn[:, :4])  # xywh
@@ -210,6 +252,7 @@ class DetectionValidator(BaseValidator):
                 'score': round(p[4], 5)})
 
     def eval_json(self, stats):
+        """Evaluates YOLO output in JSON format and returns performance statistics."""
         if self.args.save_json and self.is_coco and len(self.jdict):
             anno_json = self.data['path'] / 'annotations/instances_val2017.json'  # annotations
             pred_json = self.save_dir / 'predictions.json'  # predictions
@@ -236,6 +279,7 @@ class DetectionValidator(BaseValidator):
 
 
 def val(cfg=DEFAULT_CFG, use_python=False):
+    """Validate trained YOLO model on validation dataset."""
     model = cfg.model or 'yolov8n.pt'
     data = cfg.data or 'coco128.yaml'
 

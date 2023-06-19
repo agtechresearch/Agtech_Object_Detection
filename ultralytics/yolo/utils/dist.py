@@ -1,4 +1,4 @@
-# Ultralytics YOLO 🚀, GPL-3.0 license
+# Ultralytics YOLO 🚀, AGPL-3.0 license
 
 import os
 import re
@@ -24,12 +24,16 @@ def find_free_network_port() -> int:
 
 
 def generate_ddp_file(trainer):
+    """Generates a DDP file and returns its file name."""
     module, name = f'{trainer.__class__.__module__}.{trainer.__class__.__name__}'.rsplit('.', 1)
 
-    content = f'''cfg = {vars(trainer.args)} \nif __name__ == "__main__":
+    content = f'''overrides = {vars(trainer.args)} \nif __name__ == "__main__":
     from {module} import {name}
+    from ultralytics.yolo.utils import DEFAULT_CFG_DICT
 
-    trainer = {name}(cfg=cfg)
+    cfg = DEFAULT_CFG_DICT.copy()
+    cfg.update(save_dir='')   # handle the extra key 'save_dir'
+    trainer = {name}(cfg=cfg, overrides=overrides)
     trainer.train()'''
     (USER_CONFIG_DIR / 'DDP').mkdir(exist_ok=True)
     with tempfile.NamedTemporaryFile(prefix='_temp_',
@@ -43,6 +47,7 @@ def generate_ddp_file(trainer):
 
 
 def generate_ddp_command(world_size, trainer):
+    """Generates and returns command for distributed training."""
     import __main__  # noqa local import to avoid https://github.com/Lightning-AI/lightning/issues/15218
     if not trainer.resume:
         shutil.rmtree(trainer.save_dir)  # remove the save_dir
@@ -52,13 +57,11 @@ def generate_ddp_command(world_size, trainer):
         file = generate_ddp_file(trainer)
     dist_cmd = 'torch.distributed.run' if TORCH_1_9 else 'torch.distributed.launch'
     port = find_free_network_port()
-    exclude_args = ['save_dir']
-    args = [f'{k}={v}' for k, v in vars(trainer.args).items() if k not in exclude_args]
-    cmd = [sys.executable, '-m', dist_cmd, '--nproc_per_node', f'{world_size}', '--master_port', f'{port}', file] + args
+    cmd = [sys.executable, '-m', dist_cmd, '--nproc_per_node', f'{world_size}', '--master_port', f'{port}', file]
     return cmd, file
 
 
 def ddp_cleanup(trainer, file):
-    # delete temp file if created
+    """Delete temp file if created."""
     if f'{id(trainer)}.py' in file:  # if temp_file suffix in file
         os.remove(file)

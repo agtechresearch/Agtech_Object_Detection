@@ -1,4 +1,4 @@
-# Ultralytics YOLO 🚀, GPL-3.0 license
+# Ultralytics YOLO 🚀, AGPL-3.0 license
 
 import contextlib
 import inspect
@@ -8,25 +8,30 @@ import platform
 import re
 import subprocess
 import sys
-import tempfile
 import threading
+import urllib
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Union
 
 import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import yaml
 
 from ultralytics import __version__
 
-# Constants
+# PyTorch Multi-GPU DDP Constants
+RANK = int(os.getenv('RANK', -1))
+LOCAL_RANK = int(os.getenv('LOCAL_RANK', -1))  # https://pytorch.org/docs/stable/elastic/run.html
+WORLD_SIZE = int(os.getenv('WORLD_SIZE', 1))
+
+# Other Constants
 FILE = Path(__file__).resolve()
 ROOT = FILE.parents[2]  # YOLO
 DEFAULT_CFG_PATH = ROOT / 'yolo/cfg/default.yaml'
-RANK = int(os.getenv('RANK', -1))
 NUM_THREADS = min(8, max(1, os.cpu_count() - 1))  # number of YOLOv5 multiprocessing threads
 AUTOINSTALL = str(os.getenv('YOLO_AUTOINSTALL', True)).lower() == 'true'  # global auto-install mode
 VERBOSE = str(os.getenv('YOLO_VERBOSE', True)).lower() == 'true'  # global verbose mode
@@ -46,14 +51,14 @@ HELP_MSG = \
         from ultralytics import YOLO
 
         # Load a model
-        model = YOLO("yolov8n.yaml")  # build a new model from scratch
+        model = YOLO('yolov8n.yaml')  # build a new model from scratch
         model = YOLO("yolov8n.pt")  # load a pretrained model (recommended for training)
 
         # Use the model
         results = model.train(data="coco128.yaml", epochs=3)  # train the model
         results = model.val()  # evaluate model performance on the validation set
-        results = model("https://ultralytics.com/images/bus.jpg")  # predict on an image
-        success = model.export(format="onnx")  # export the model to ONNX format
+        results = model('https://ultralytics.com/images/bus.jpg')  # predict on an image
+        success = model.export(format='onnx')  # export the model to ONNX format
 
     3. Use the command line interface (CLI):
 
@@ -92,25 +97,60 @@ HELP_MSG = \
     """
 
 # Settings
-torch.set_printoptions(linewidth=320, precision=5, profile='long')
+torch.set_printoptions(linewidth=320, precision=4, profile='default')
 np.set_printoptions(linewidth=320, formatter={'float_kind': '{:11.5g}'.format})  # format short g, %precision=5
 cv2.setNumThreads(0)  # prevent OpenCV from multithreading (incompatible with PyTorch DataLoader)
 os.environ['NUMEXPR_MAX_THREADS'] = str(NUM_THREADS)  # NumExpr max threads
 os.environ['CUBLAS_WORKSPACE_CONFIG'] = ':4096:8'  # for deterministic training
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # suppress verbose TF compiler warnings in Colab
+
+
+class SimpleClass:
+    """
+    Ultralytics SimpleClass is a base class providing helpful string representation, error reporting, and attribute
+    access methods for easier debugging and usage.
+    """
+
+    def __str__(self):
+        """Return a human-readable string representation of the object."""
+        attr = []
+        for a in dir(self):
+            v = getattr(self, a)
+            if not callable(v) and not a.startswith('_'):
+                if isinstance(v, SimpleClass):
+                    # Display only the module and class name for subclasses
+                    s = f'{a}: {v.__module__}.{v.__class__.__name__} object'
+                else:
+                    s = f'{a}: {repr(v)}'
+                attr.append(s)
+        return f'{self.__module__}.{self.__class__.__name__} object with attributes:\n\n' + '\n'.join(attr)
+
+    def __repr__(self):
+        """Return a machine-readable string representation of the object."""
+        return self.__str__()
+
+    def __getattr__(self, attr):
+        """Custom attribute access error message with helpful information."""
+        name = self.__class__.__name__
+        raise AttributeError(f"'{name}' object has no attribute '{attr}'. See valid attributes below.\n{self.__doc__}")
 
 
 class IterableSimpleNamespace(SimpleNamespace):
     """
-    Iterable SimpleNamespace class to allow SimpleNamespace to be used with dict() and in for loops
+    Ultralytics IterableSimpleNamespace is an extension class of SimpleNamespace that adds iterable functionality and
+    enables usage with dict() and for loops.
     """
 
     def __iter__(self):
+        """Return an iterator of key-value pairs from the namespace's attributes."""
         return iter(vars(self).items())
 
     def __str__(self):
+        """Return a human-readable string representation of the object."""
         return '\n'.join(f'{k}={v}' for k, v in vars(self).items())
 
     def __getattr__(self, attr):
+        """Custom attribute access error message with helpful information."""
         name = self.__class__.__name__
         raise AttributeError(f"""
             '{name}' object has no attribute '{attr}'. This may be caused by a modified or out of date ultralytics
@@ -120,13 +160,53 @@ class IterableSimpleNamespace(SimpleNamespace):
             """)
 
     def get(self, key, default=None):
+        """Return the value of the specified key if it exists; otherwise, return the default value."""
         return getattr(self, key, default)
 
 
+def plt_settings(rcparams=None, backend='Agg'):
+    """
+    Decorator to temporarily set rc parameters and the backend for a plotting function.
+
+    Usage:
+        decorator: @plt_settings({"font.size": 12})
+        context manager: with plt_settings({"font.size": 12}):
+
+    Args:
+        rcparams (dict): Dictionary of rc parameters to set.
+        backend (str, optional): Name of the backend to use. Defaults to 'Agg'.
+
+    Returns:
+        (Callable): Decorated function with temporarily set rc parameters and backend. This decorator can be
+            applied to any function that needs to have specific matplotlib rc parameters and backend for its execution.
+    """
+
+    if rcparams is None:
+        rcparams = {'font.size': 11}
+
+    def decorator(func):
+        """Decorator to apply temporary rc parameters and backend to a function."""
+
+        def wrapper(*args, **kwargs):
+            """Sets rc parameters and backend, calls the original function, and restores the settings."""
+            original_backend = plt.get_backend()
+            plt.switch_backend(backend)
+
+            with plt.rc_context(rcparams):
+                result = func(*args, **kwargs)
+
+            plt.switch_backend(original_backend)
+            return result
+
+        return wrapper
+
+    return decorator
+
+
 def set_logging(name=LOGGING_NAME, verbose=True):
-    # sets up logging for the given name
+    """Sets up logging for the given name."""
     rank = int(os.getenv('RANK', -1))  # rank in world for Multi-GPU trainings
-    level = logging.INFO if verbose and rank in (-1, 0) else logging.ERROR
+    level = logging.INFO if verbose and rank in {-1, 0} else logging.ERROR
     logging.config.dictConfig({
         'version': 1,
         'disable_existing_loggers': False,
@@ -145,13 +225,30 @@ def set_logging(name=LOGGING_NAME, verbose=True):
                 'propagate': False}}})
 
 
+def emojis(string=''):
+    """Return platform-dependent emoji-safe version of string."""
+    return string.encode().decode('ascii', 'ignore') if WINDOWS else string
+
+
+class EmojiFilter(logging.Filter):
+    """
+    A custom logging filter class for removing emojis in log messages.
+
+    This filter is particularly useful for ensuring compatibility with Windows terminals
+    that may not support the display of emojis in log messages.
+    """
+
+    def filter(self, record):
+        """Filter logs by emoji unicode characters on windows."""
+        record.msg = emojis(record.msg)
+        return super().filter(record)
+
+
 # Set logger
 set_logging(LOGGING_NAME, verbose=VERBOSE)  # run before defining LOGGER
 LOGGER = logging.getLogger(LOGGING_NAME)  # define globally (used in train.py, val.py, detect.py, etc.)
 if WINDOWS:  # emoji-safe logging
-    info_fn, warning_fn = LOGGER.info, LOGGER.warning
-    setattr(LOGGER, info_fn.__name__, lambda x: info_fn(emojis(x)))
-    setattr(LOGGER, warning_fn.__name__, lambda x: warning_fn(emojis(x)))
+    LOGGER.addFilter(EmojiFilter())
 
 
 def yaml_save(file='data.yaml', data=None):
@@ -160,23 +257,26 @@ def yaml_save(file='data.yaml', data=None):
 
     Args:
         file (str, optional): File name. Default is 'data.yaml'.
-        data (dict, optional): Data to save in YAML format. Default is None.
+        data (dict): Data to save in YAML format.
 
     Returns:
-        None: Data is saved to the specified file.
+        (None): Data is saved to the specified file.
     """
+    if data is None:
+        data = {}
     file = Path(file)
     if not file.parent.exists():
         # Create parent directories if they don't exist
         file.parent.mkdir(parents=True, exist_ok=True)
 
+    # Convert Path objects to strings
+    for k, v in data.items():
+        if isinstance(v, Path):
+            data[k] = str(v)
+
+    # Dump data to file in YAML format
     with open(file, 'w') as f:
-        # Dump data to file in YAML format, converting Path objects to strings
-        yaml.safe_dump({k: str(v) if isinstance(v, Path) else v
-                        for k, v in data.items()},
-                       f,
-                       sort_keys=False,
-                       allow_unicode=True)
+        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True)
 
 
 def yaml_load(file='data.yaml', append_filename=False):
@@ -188,7 +288,7 @@ def yaml_load(file='data.yaml', append_filename=False):
         append_filename (bool): Add the YAML filename to the YAML dictionary. Default is False.
 
     Returns:
-        dict: YAML data and file name.
+        (dict): YAML data and file name.
     """
     with open(file, errors='ignore', encoding='utf-8') as f:
         s = f.read()  # string
@@ -230,7 +330,7 @@ def is_colab():
     Check if the current script is running inside a Google Colab notebook.
 
     Returns:
-        bool: True if running inside a Colab notebook, False otherwise.
+        (bool): True if running inside a Colab notebook, False otherwise.
     """
     return 'COLAB_RELEASE_TAG' in os.environ or 'COLAB_BACKEND_VERSION' in os.environ
 
@@ -240,7 +340,7 @@ def is_kaggle():
     Check if the current script is running inside a Kaggle kernel.
 
     Returns:
-        bool: True if running inside a Kaggle kernel, False otherwise.
+        (bool): True if running inside a Kaggle kernel, False otherwise.
     """
     return os.environ.get('PWD') == '/kaggle/working' and os.environ.get('KAGGLE_URL_BASE') == 'https://www.kaggle.com'
 
@@ -251,7 +351,7 @@ def is_jupyter():
     Verified on Colab, Jupyterlab, Kaggle, Paperspace.
 
     Returns:
-        bool: True if running inside a Jupyter Notebook, False otherwise.
+        (bool): True if running inside a Jupyter Notebook, False otherwise.
     """
     with contextlib.suppress(Exception):
         from IPython import get_ipython
@@ -264,7 +364,7 @@ def is_docker() -> bool:
     Determine if the script is running inside a Docker container.
 
     Returns:
-        bool: True if the script is running inside a Docker container, False otherwise.
+        (bool): True if the script is running inside a Docker container, False otherwise.
     """
     file = Path('/proc/self/cgroup')
     if file.exists():
@@ -279,13 +379,19 @@ def is_online() -> bool:
     Check internet connectivity by attempting to connect to a known online host.
 
     Returns:
-        bool: True if connection is successful, False otherwise.
+        (bool): True if connection is successful, False otherwise.
     """
     import socket
-    with contextlib.suppress(Exception):
-        host = socket.gethostbyname('www.github.com')
-        socket.create_connection((host, 80), timeout=2)
-        return True
+
+    for host in '1.1.1.1', '8.8.8.8', '223.5.5.5':  # Cloudflare, Google, AliDNS:
+        try:
+            test_connection = socket.create_connection(address=(host, 53), timeout=2)
+        except (socket.timeout, socket.gaierror, OSError):
+            continue
+        else:
+            # If the connection was successful, close it to avoid a ResourceWarning
+            test_connection.close()
+            return True
     return False
 
 
@@ -300,7 +406,7 @@ def is_pip_package(filepath: str = __name__) -> bool:
         filepath (str): The filepath to check.
 
     Returns:
-        bool: True if the file is part of a pip package, False otherwise.
+        (bool): True if the file is part of a pip package, False otherwise.
     """
     import importlib.util
 
@@ -316,17 +422,12 @@ def is_dir_writeable(dir_path: Union[str, Path]) -> bool:
     Check if a directory is writeable.
 
     Args:
-        dir_path (str) or (Path): The path to the directory.
+        dir_path (str | Path): The path to the directory.
 
     Returns:
-        bool: True if the directory is writeable, False otherwise.
+        (bool): True if the directory is writeable, False otherwise.
     """
-    try:
-        with tempfile.TemporaryFile(dir=dir_path):
-            pass
-        return True
-    except OSError:
-        return False
+    return os.access(str(dir_path), os.W_OK)
 
 
 def is_pytest_running():
@@ -366,7 +467,7 @@ def get_git_dir():
     If the current file is not part of a git repository, returns None.
 
     Returns:
-        (Path) or (None): Git root directory if found or None if not found.
+        (Path | None): Git root directory if found or None if not found.
     """
     for d in Path(__file__).parents:
         if (d / '.git').is_dir():
@@ -379,7 +480,7 @@ def get_git_origin_url():
     Retrieves the origin URL of a git repository.
 
     Returns:
-        (str) or (None): The origin URL of the git repository.
+        (str | None): The origin URL of the git repository.
     """
     if is_git_dir():
         with contextlib.suppress(subprocess.CalledProcessError):
@@ -393,7 +494,7 @@ def get_git_branch():
     Returns the current git branch name. If not in a git repository, returns None.
 
     Returns:
-        (str) or (None): The current git branch name.
+        (str | None): The current git branch name.
     """
     if is_git_dir():
         with contextlib.suppress(subprocess.CalledProcessError):
@@ -409,7 +510,7 @@ def get_default_args(func):
         func (callable): The function to inspect.
 
     Returns:
-        dict: A dictionary where each key is a parameter name, and each value is the default value of that parameter.
+        (dict): A dictionary where each key is a parameter name, and each value is the default value of that parameter.
     """
     signature = inspect.signature(func)
     return {k: v.default for k, v in signature.parameters.items() if v.default is not inspect.Parameter.empty}
@@ -423,7 +524,7 @@ def get_user_config_dir(sub_dir='Ultralytics'):
         sub_dir (str): The name of the subdirectory to create.
 
     Returns:
-        Path: The path to the user config directory.
+        (Path): The path to the user config directory.
     """
     # Return the appropriate config directory for each operating system
     if WINDOWS:
@@ -438,6 +539,7 @@ def get_user_config_dir(sub_dir='Ultralytics'):
     # GCP and AWS lambda fix, only /tmp is writeable
     if not is_dir_writeable(str(path.parent)):
         path = Path('/tmp') / sub_dir
+        LOGGER.warning(f"WARNING ⚠️ user config directory is not writeable, defaulting to '{path}'.")
 
     # Create the subdirectory if it does not exist
     path.mkdir(parents=True, exist_ok=True)
@@ -445,16 +547,12 @@ def get_user_config_dir(sub_dir='Ultralytics'):
     return path
 
 
-USER_CONFIG_DIR = get_user_config_dir()  # Ultralytics settings dir
-
-
-def emojis(string=''):
-    # Return platform-dependent emoji-safe version of string
-    return string.encode().decode('ascii', 'ignore') if WINDOWS else string
+USER_CONFIG_DIR = Path(os.getenv('YOLO_CONFIG_DIR', get_user_config_dir()))  # Ultralytics settings dir
+SETTINGS_YAML = USER_CONFIG_DIR / 'settings.yaml'
 
 
 def colorstr(*input):
-    # Colors a string https://en.wikipedia.org/wiki/ANSI_escape_code, i.e.  colorstr('blue', 'hello world')
+    """Colors a string https://en.wikipedia.org/wiki/ANSI_escape_code, i.e.  colorstr('blue', 'hello world')."""
     *args, string = input if len(input) > 1 else ('blue', 'bold', input[0])  # color arguments, string
     colors = {
         'black': '\033[30m',  # basic colors
@@ -480,23 +578,29 @@ def colorstr(*input):
 
 
 class TryExcept(contextlib.ContextDecorator):
-    # YOLOv8 TryExcept class. Usage: @TryExcept() decorator or 'with TryExcept():' context manager
+    """YOLOv8 TryExcept class. Usage: @TryExcept() decorator or 'with TryExcept():' context manager."""
+
     def __init__(self, msg='', verbose=True):
+        """Initialize TryExcept class with optional message and verbosity settings."""
         self.msg = msg
         self.verbose = verbose
 
     def __enter__(self):
+        """Executes when entering TryExcept context, initializes instance."""
         pass
 
     def __exit__(self, exc_type, value, traceback):
+        """Defines behavior when exiting a 'with' block, prints error message if necessary."""
         if self.verbose and value:
             print(emojis(f"{self.msg}{': ' if self.msg else ''}{value}"))
         return True
 
 
 def threaded(func):
-    # Multi-threads a target function and returns thread. Usage: @threaded decorator
+    """Multi-threads a target function and returns thread. Usage: @threaded decorator."""
+
     def wrapper(*args, **kwargs):
+        """Multi-threads a given function and returns the thread."""
         thread = threading.Thread(target=func, args=args, kwargs=kwargs, daemon=True)
         thread.start()
         return thread
@@ -506,10 +610,36 @@ def threaded(func):
 
 def set_sentry():
     """
-    Initialize the Sentry SDK for error tracking and reporting if pytest is not currently running.
+    Initialize the Sentry SDK for error tracking and reporting. Only used if sentry_sdk package is installed and
+    sync=True in settings. Run 'yolo settings' to see and update settings YAML file.
+
+    Conditions required to send errors (ALL conditions must be met or no errors will be reported):
+        - sentry_sdk package is installed
+        - sync=True in YOLO settings
+        - pytest is not running
+        - running in a pip package installation
+        - running in a non-git directory
+        - running with rank -1 or 0
+        - online environment
+        - CLI used to run package (checked with 'yolo' as the name of the main CLI command)
+
+    The function also configures Sentry SDK to ignore KeyboardInterrupt and FileNotFoundError
+    exceptions and to exclude events with 'out of memory' in their exception message.
+
+    Additionally, the function sets custom tags and user information for Sentry events.
     """
 
     def before_send(event, hint):
+        """
+        Modify the event before sending it to Sentry based on specific exception types and messages.
+
+        Args:
+            event (dict): The event dictionary containing information about the error.
+            hint (dict): A dictionary containing additional information about the error.
+
+        Returns:
+            dict: The modified event or None if the event should not be sent to Sentry.
+        """
         if 'exc_info' in hint:
             exc_type, exc_value, tb = hint['exc_info']
             if exc_type in (KeyboardInterrupt, FileNotFoundError) \
@@ -528,26 +658,31 @@ def set_sentry():
             Path(sys.argv[0]).name == 'yolo' and \
             not TESTS_RUNNING and \
             ONLINE and \
-            ((is_pip_package() and not is_git_dir()) or
-             (get_git_origin_url() == 'https://github.com/ultralytics/ultralytics.git' and get_git_branch() == 'main')):
+            is_pip_package() and \
+            not is_git_dir():
 
-        import sentry_sdk  # noqa
+        # If sentry_sdk package is not installed then return and do not use Sentry
+        try:
+            import sentry_sdk  # noqa
+        except ImportError:
+            return
+
         sentry_sdk.init(
-            dsn='https://f805855f03bb4363bc1e16cb7d87b654@o4504521589325824.ingest.sentry.io/4504521592406016',
+            dsn='https://5ff1556b71594bfea135ff0203a0d290@o4504521589325824.ingest.sentry.io/4504521592406016',
             debug=False,
             traces_sample_rate=1.0,
             release=__version__,
             environment='production',  # 'dev' or 'production'
             before_send=before_send,
             ignore_errors=[KeyboardInterrupt, FileNotFoundError])
-        sentry_sdk.set_user({'id': SETTINGS['uuid']})
+        sentry_sdk.set_user({'id': SETTINGS['uuid']})  # SHA-256 anonymized UUID hash
 
         # Disable all sentry logging
         for logger in 'sentry_sdk', 'sentry_sdk.errors':
             logging.getLogger(logger).setLevel(logging.CRITICAL)
 
 
-def get_settings(file=USER_CONFIG_DIR / 'settings.yaml', version='0.0.2'):
+def get_settings(file=SETTINGS_YAML, version='0.0.3'):
     """
     Loads a global Ultralytics settings YAML file or creates one with default values if it does not exist.
 
@@ -556,7 +691,7 @@ def get_settings(file=USER_CONFIG_DIR / 'settings.yaml', version='0.0.2'):
         version (str): Settings version. If min settings version not met, new default settings will be saved.
 
     Returns:
-        dict: Dictionary of settings key-value pairs.
+        (dict): Dictionary of settings key-value pairs.
     """
     import hashlib
 
@@ -570,8 +705,9 @@ def get_settings(file=USER_CONFIG_DIR / 'settings.yaml', version='0.0.2'):
         'datasets_dir': str(datasets_root / 'datasets'),  # default datasets directory.
         'weights_dir': str(root / 'weights'),  # default weights directory.
         'runs_dir': str(root / 'runs'),  # default runs directory.
+        'uuid': hashlib.sha256(str(uuid.getnode()).encode()).hexdigest(),  # SHA-256 anonymized UUID hash
         'sync': True,  # sync analytics to help with YOLO development
-        'uuid': hashlib.sha256(str(uuid.getnode()).encode()).hexdigest(),  # anonymized uuid hash
+        'api_key': '',  # Ultralytics HUB API key (https://hub.ultralytics.com/)
         'settings_version': version}  # Ultralytics settings version
 
     with torch_distributed_zero_first(RANK):
@@ -581,7 +717,8 @@ def get_settings(file=USER_CONFIG_DIR / 'settings.yaml', version='0.0.2'):
 
         # Check that settings keys and types match defaults
         correct = \
-            settings.keys() == defaults.keys() \
+            settings \
+            and settings.keys() == defaults.keys() \
             and all(type(a) == type(b) for a, b in zip(settings.values(), defaults.values())) \
             and check_version(settings['settings_version'], version)
         if not correct:
@@ -594,13 +731,32 @@ def get_settings(file=USER_CONFIG_DIR / 'settings.yaml', version='0.0.2'):
         return settings
 
 
-def set_settings(kwargs, file=USER_CONFIG_DIR / 'settings.yaml'):
+def set_settings(kwargs, file=SETTINGS_YAML):
     """
     Function that runs on a first-time ultralytics package installation to set up global settings and create necessary
     directories.
     """
     SETTINGS.update(kwargs)
     yaml_save(file, SETTINGS)
+
+
+def deprecation_warn(arg, new_arg, version=None):
+    """Issue a deprecation warning when a deprecated argument is used, suggesting an updated argument."""
+    if not version:
+        version = float(__version__[:3]) + 0.2  # deprecate after 2nd major release
+    LOGGER.warning(f"WARNING ⚠️ '{arg}' is deprecated and will be removed in 'ultralytics {version}' in the future. "
+                   f"Please use '{new_arg}' instead.")
+
+
+def clean_url(url):
+    """Strip auth from URL, i.e. https://url.com/file.txt?auth -> https://url.com/file.txt."""
+    url = str(Path(url)).replace(':/', '://')  # Pathlib turns :// -> :/
+    return urllib.parse.unquote(url).split('?')[0]  # '%2F' to '/', split https://url.com/file.txt?auth
+
+
+def url2file(url):
+    """Convert URL to filename, i.e. https://url.com/file.txt?auth -> file.txt."""
+    return Path(clean_url(url)).name
 
 
 # Run below code on yolo/utils init ------------------------------------------------------------------------------------
@@ -613,3 +769,10 @@ ENVIRONMENT = 'Colab' if is_colab() else 'Kaggle' if is_kaggle() else 'Jupyter' 
     'Docker' if is_docker() else platform.system()
 TESTS_RUNNING = is_pytest_running() or is_github_actions_ci()
 set_sentry()
+
+# Apply monkey patches if the script is being run from within the parent directory of the script's location
+from .patches import imread, imshow, imwrite
+
+# torch.save = torch_save
+if Path(inspect.stack()[0].filename).parent.parent.as_posix() in inspect.stack()[-1].filename:
+    cv2.imread, cv2.imwrite, cv2.imshow = imread, imwrite, imshow

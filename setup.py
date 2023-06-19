@@ -1,4 +1,4 @@
-# Ultralytics YOLO 🚀, GPL-3.0 license
+# Ultralytics YOLO 🚀, AGPL-3.0 license
 
 import re
 from pathlib import Path
@@ -11,7 +11,6 @@ FILE = Path(__file__).resolve()
 PARENT = FILE.parent  # root directory
 README = (PARENT / 'README.md').read_text(encoding='utf-8')
 REQUIREMENTS = [f'{x.name}{x.specifier}' for x in pkg.parse_requirements((PARENT / 'requirements.txt').read_text())]
-PKG_REQUIREMENTS = ['sentry_sdk']  # pip-only requirements
 
 
 def get_version():
@@ -23,8 +22,9 @@ setup(
     name='ultralytics',  # name of pypi package
     version=get_version(),  # version of pypi package
     python_requires='>=3.7',
-    license='GPL-3.0',
-    description='Ultralytics YOLOv8',
+    license='AGPL-3.0',
+    description=('Ultralytics YOLOv8 for SOTA object detection, multi-object tracking, instance segmentation, '
+                 'pose estimation and image classification.'),
     long_description=README,
     long_description_content_type='text/markdown',
     url='https://github.com/ultralytics/ultralytics',
@@ -36,17 +36,26 @@ setup(
     author_email='hello@ultralytics.com',
     packages=find_packages(),  # required
     include_package_data=True,
-    install_requires=REQUIREMENTS + PKG_REQUIREMENTS,
+    install_requires=REQUIREMENTS,
     extras_require={
-        'dev': ['check-manifest', 'pytest', 'pytest-cov', 'coverage', 'mkdocs-material', 'mkdocstrings[python]'],
-        'export': ['coremltools>=6.0', 'onnx', 'onnxsim', 'onnxruntime', 'openvino-dev>=2022.3'],
-        'tf': ['onnx2tf', 'sng4onnx', 'tflite_support', 'tensorflow']},
+        'dev': [
+            'check-manifest',
+            'pytest',
+            'pytest-cov',
+            'coverage',
+            'mkdocs-material',
+            'mkdocstrings[python]',
+            'mkdocs-redirects',  # for 301 redirects
+            'mkdocs-ultralytics-plugin',  # for meta descriptions and images, dates and authors
+        ],
+        'export': ['coremltools>=6.0', 'openvino-dev>=2022.3', 'tensorflowjs'],  # automatically installs tensorflow
+    },
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers',
         'Intended Audience :: Education',
         'Intended Audience :: Science/Research',
-        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+        'License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.7',
         'Programming Language :: Python :: 3.8',

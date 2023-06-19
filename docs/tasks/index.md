@@ -1,10 +1,17 @@
+---
+comments: true
+description: Learn how Ultralytics YOLOv8 AI framework supports detection, segmentation, classification, and pose/keypoint estimation tasks.
+keywords: YOLOv8, computer vision, detection, segmentation, classification, pose, keypoint detection, image segmentation, medical imaging
+---
+
 # Ultralytics YOLOv8 Tasks
 
 YOLOv8 is an AI framework that supports multiple computer vision **tasks**. The framework can be used to
 perform [detection](detect.md), [segmentation](segment.md), [classification](classify.md),
-and [keypoints](keypoints.md) detection. Each of these tasks has a different objective and use case.
+and [pose](pose.md) estimation. Each of these tasks has a different objective and use case.
 
-<img width="1024" src="https://user-images.githubusercontent.com/26833433/212094133-6bb8c21c-3d47-41df-a512-81c5931054ae.png">
+<br>
+<img width="1024" src="https://raw.githubusercontent.com/ultralytics/assets/main/im/banner-tasks.png">
 
 ## [Detection](detect.md)
 
@@ -29,15 +36,13 @@ images based on their content. It uses a variant of the EfficientNet architectur
 
 [Classification Examples](classify.md){ .md-button .md-button--primary}
 
-<!--
-## [Keypoints](keypoints.md)
+## [Pose](pose.md)
 
-Keypoints detection is a task that involves detecting specific points in an image or video frame. These points are
+Pose/keypoint detection is a task that involves detecting specific points in an image or video frame. These points are
 referred to as keypoints and are used to track movement or pose estimation. YOLOv8 can detect keypoints in an image or
 video frame with high accuracy and speed.
 
-[Keypoints Examples](keypoints.md){ .md-button .md-button--primary}
--->
+[Pose Examples](pose.md){ .md-button .md-button--primary}
 
 ## Conclusion
 
