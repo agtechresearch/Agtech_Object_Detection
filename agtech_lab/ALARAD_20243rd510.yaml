@@ -1,0 +1,15 @@
+path: /home/hyeonji/ALARAD_3rd_2024/
+train: images/train
+val: images/train/
+test: images/test/
+
+
+# Classes
+names:
+  0: Bud
+  1: Flower
+  2: Receptacle
+  3: Early fruit
+  4: White fruit
+  5: 50% maturity
+  6: 80% maturity
