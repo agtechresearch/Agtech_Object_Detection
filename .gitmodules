@@ -1,0 +1,3 @@
+[submodule "Strawberry_video"]
+	path = Strawberry_video
+	url = https://github.com/agtechresearch/Strawberry_video.git
