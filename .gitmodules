@@ -1,3 +1,6 @@
 [submodule "Strawberry_video"]
 	path = Strawberry_video
 	url = https://github.com/agtechresearch/Strawberry_video.git
+[submodule "ultralytics"]
+	path = ultralytics
+	url = https://github.com/ultralytics/ultralytics.git
